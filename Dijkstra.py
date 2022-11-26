@@ -61,13 +61,16 @@ class Node:
 
     @property
     def path(self) -> str:
-        path = '['
+        # path = '['
+        path = []
         node = self.city
         while node:
             node_o = self.__graph[node]
-            path += node_o.city + ', '
+            path.append(node_o.city)
+            # path += node_o.city + ', '
             node = node_o.__parent
-        return path[:-2] + ']'
+        # return path[:-2] + ']'
+        return path
 
     # @property
     # def parent(self) -> str:
