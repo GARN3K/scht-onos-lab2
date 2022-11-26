@@ -7,7 +7,9 @@ from requests.auth import HTTPBasicAuth
 
 import Dijkstra
 
+#Url do onosa
 onosUrl = "http://192.168.1.216:8181/onos/v1/"
+#Slownik zawierajacy nazwy miast i id switchy w nich
 devices = {
     "Berlin": "of:0000000000000001",
     "Hamburg": "of:0000000000000002",
@@ -20,6 +22,7 @@ devices = {
     "Dortmund": "of:0000000000000009",
     "Essen": "of:000000000000000a",
 }
+#Slownik zawierajacy nazwy miast i ich adresy IP
 IPs = {
     "Berlin": "10.0.0.1",
     "Hamburg": "10.0.0.7",
@@ -41,6 +44,7 @@ class Manager:
         self.path = []
         Manager.load_data(self)
 
+#Funkcja wczytujaca dane z pliku .ods (taki excel mozesz to prosto przerobic na excela)
     def load_data(self):
         loaded_data = pd.read_excel("dane.ods", engine="odf")
         for index, row in loaded_data.iterrows():
@@ -48,7 +52,9 @@ class Manager:
                 self.HOSTS[row[0]].append(Dijkstra.Edge(row[1], row[2], 100))
             else:
                 self.HOSTS[row[0]] = ([Dijkstra.Edge(row[1], row[2], 100)])
-    def data_input(self):
+
+#Funkcja pozwalajaca uzytkownikowi czy chce dodac nowe polaczenie czy usunac stare
+    def data_input(self) -> bool:
         print('Wybierz opcje: \n 1) Dodaj nowe polaczenie \n 2) Usun poprzednie polaczenia')
         option = input()
         match option:
@@ -63,12 +69,14 @@ class Manager:
                 'Podales zly klucz'
                 return False
 
+#Funckja sortujaca slownik do znajdywania najkrotszej drogi
     def sort_dict(self, dictionary, hostA) -> dict:
         dictionary_temp1 = {hostA: dictionary[hostA]}
         dictionary_temp2 = {k: v for k, v in dictionary.items() if k != hostA}
         dictionary_final = {**dictionary_temp1, **dictionary_temp2}
         return dictionary_final
 
+#Funkcja znajdujaca najkrtosza droge
     def shortest_path(self, hosts, hostB):
         queue = PriorityQueue()
         nodes = Dijkstra.construct_graph(hosts)
@@ -93,6 +101,7 @@ class Manager:
     def get_hostS(self) -> str:
         return self.hostS
 
+#Funckja znajdujaca porty na linku
     def get_ports(self, hostS, hostD) -> []:
         r = requests.get(onosUrl + "links", auth=HTTPBasicAuth("onos", "rocks"))
         for item in r.json()['links']:
@@ -103,6 +112,7 @@ class Manager:
                 self.PORTS['dst_port'] = item['dst']['port']
         return self.PORTS
 
+#Funkcja tworzaca flowy dla danej sciezki
     def create_flow(self, path):
         if (len(path) < 2):
             AssertionError()
@@ -117,18 +127,18 @@ class Manager:
         with open("flow.json") as file:
             return json.load(file)
 
+#Funkcja dodajaca flowy do onosa
     def addFlow(self, deviceId: str, inputPort: str, outputPort: str, ipDest: str):
         template = Manager.getTemplate(self)
-
 
         template["deviceId"] = deviceId
         template["treatment"]["instructions"][0]["port"] = outputPort
         template["selector"]["criteria"][0]["port"] = inputPort
         template["selector"]["criteria"][2]["ip"] = ipDest+"/32"
 
-        # r = requests.post('http://192.168.1.216:8181/onos/v1/flows/of:0000000000000001', json=template, auth=HTTPBasicAuth("onos", "rocks"))
         r = requests.post(onosUrl + "flows/" + deviceId, json=template, auth=HTTPBasicAuth("onos", "rocks"))
 
+#Funkcja usuwajaca flowy z onosa
     def deleteFlows(self):
         r = requests.delete(onosUrl + "flows/application/org.onosproject.rest", auth=HTTPBasicAuth("onos", "rocks"))
         self.PORTS = {}
