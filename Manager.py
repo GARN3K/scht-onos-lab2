@@ -212,7 +212,7 @@ class Manager:
         visits = {}
         for key, value in self.HOSTS.items():
             for i in range(len(value)):
-                if (i == len(value)):
+                if (i >= len(value)):
                     break
                 if(value[i].bandwith < int(bandwith)):
                     if(key in visits):
