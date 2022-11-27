@@ -38,6 +38,7 @@ IPs = {
 
 class Manager:
     def __init__(self) -> None:
+        self.HOSTS_temp = {}
         self.HOSTS = {}
         self.PORTS = {}
         self.path = []
@@ -54,7 +55,7 @@ class Manager:
 
 #Funkcja pozwalajaca uzytkownikowi czy chce dodac nowe polaczenie czy usunac stare
     def data_input(self) -> bool:
-        print('Wybierz opcje: \n 1) Dodaj nowe polaczenie \n 2) Usun poprzednie polaczenia')
+        print('Wybierz opcje: \n 1) Dodaj nowe polaczenie \n 2) Usun poprzednie przepływy')
         option = input()
         match option:
             case '1':
@@ -71,7 +72,7 @@ class Manager:
 #Funckja sortujaca slownik do znajdywania najkrotszej drogi
     def sort_dict(self, dictionary, hostA) -> dict:
         dictionary_temp1 = {hostA: dictionary[hostA]}
-        dictionary_temp2 = {k: v for k, v in dictionary.items() if k != hostA}
+        dictionary_temp2    = {k: v for k, v in dictionary.items() if k != hostA}
         dictionary_final = {**dictionary_temp1, **dictionary_temp2}
         return dictionary_final
 
@@ -91,11 +92,24 @@ class Manager:
     def convert_path(self):
         path_temp = self.path
         self.path = []
-        for city in path_temp:
-            self.path.append(devices[city])
+        for i in range(len(path_temp)):
+            for j in range(len(self.HOSTS[path_temp[i]])):
+                if(i < len(path_temp) -1):
+                    if(self.HOSTS[path_temp[i]][j].city == path_temp[i+1]):
+                        self.HOSTS[path_temp[i]][j].bandwith -= int(self.bandwith)
+                        for k in range(len(self.HOSTS[path_temp[i]])):
+                            if(k == len(self.HOSTS[path_temp[i+1]])):
+                                break
+                            if self.HOSTS[path_temp[i+1]][k].city == path_temp[i]:
+                                self.HOSTS[path_temp[i+1]][k].bandwith -= int(self.bandwith)
+
+            self.path.append(devices[path_temp[i]])
 
     def get_path(self) -> list:
         return self.path
+
+    def get_bandwith(self) -> str:
+        return self.bandwith
 
     def get_hosts(self) -> dict:
         return self.HOSTS
@@ -105,6 +119,8 @@ class Manager:
 
     def get_hostS(self) -> str:
         return self.hostS
+    def get_host_temp(self) -> dict:
+        return self.HOSTS_temp
 
 #Funckja znajdujaca porty na linku
     def get_ports_of_device(self, deviceId: str):
@@ -173,7 +189,7 @@ class Manager:
             return json.load(file)
 
 #Funkcja dodajaca flowy do onosa
-    def addFlow(self, deviceId: str, inputPort: str, outputPort: str, ipDest: str):
+    def addFlow(self, deviceId, inputPort, outputPort, ipDest):
         flow_file = Manager.create_json_flow(self)
 
         flow_file["deviceId"] = deviceId
@@ -191,16 +207,38 @@ class Manager:
         self.HOSTS = {}
         Manager.load_data(self)
 
+    def filter_data(self, bandwith):
+        self.HOSTS_temp = self.HOSTS
+        visits = {}
+        for key, value in self.HOSTS.items():
+            for i in range(len(value)):
+                if (i == len(value)):
+                    break
+                if(value[i].bandwith < int(bandwith)):
+                    if(key in visits):
+                        number = visits[key]
+                    else:
+                        visits[key] = 0
+                        number = 0
+                    del self.HOSTS_temp[key][i-number]
+                    visits[key] += 1
+
+
+
+
+
 def main() -> None:
 
     start = Manager()
     try:
         while True:
             if(start.data_input()):
-                sorted_dict = start.sort_dict(start.get_hosts(), start.get_hostD())
+                start.filter_data(start.get_bandwith())
+                sorted_dict = start.sort_dict(start.get_host_temp(), start.get_hostD())
                 start.shortest_path(sorted_dict, start.get_hostS())
                 start.convert_path()
                 start.create_flow(start.path)
+                start.filter_data(start.get_bandwith())
     except KeyboardInterrupt:
         pass
     except AssertionError:
