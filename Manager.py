@@ -24,18 +24,17 @@ devices = {
 }
 #Slownik zawierajacy nazwy miast i ich adresy IP
 IPs = {
-    "Berlin": "10.0.0.1",
-    "Hamburg": "10.0.0.7",
-    "Koln": "10.0.0.2",
-    "Frankfurt": "10.0.0.6",
-    "Stuttgart": "10.0.0.10",
-    "Dusseldorf": "10.0.0.4",
-    "Leipzig": "10.0.0.8",
-    "Dortmund": "10.0.0.3",
-    "Essen": "10.0.0.5",
-    "Munich": "10.0.0.9",
+    "of:0000000000000001": "10.0.0.1",
+    "of:0000000000000002": "10.0.0.7",
+    "of:0000000000000004": "10.0.0.2",
+    "of:0000000000000005": "10.0.0.6",
+    "of:0000000000000006": "10.0.0.10",
+    "of:0000000000000007": "10.0.0.4",
+    "of:0000000000000008": "10.0.0.8",
+    "of:0000000000000009": "10.0.0.3",
+    "of:000000000000000a": "10.0.0.5",
+    "of:0000000000000003": "10.0.0.9",
 }
-
 
 class Manager:
     def __init__(self) -> None:
@@ -89,7 +88,13 @@ class Manager:
                 distance = node.distance
         print(self.path, distance)
 
-    def get_path(self) -> []:
+    def convert_path(self):
+        path_temp = self.path
+        self.path = []
+        for city in path_temp:
+            self.path.append(devices[city])
+
+    def get_path(self) -> list:
         return self.path
 
     def get_hosts(self) -> dict:
@@ -102,41 +107,81 @@ class Manager:
         return self.hostS
 
 #Funckja znajdujaca porty na linku
-    def get_ports(self, hostS, hostD) -> []:
+    def get_ports_of_device(self, deviceId: str):
         r = requests.get(onosUrl + "links", auth=HTTPBasicAuth("onos", "rocks"))
-        for item in r.json()['links']:
-            if item['src']['device'] == devices[hostS] and item['dst']['device'] == devices[hostD]:
-                self.PORTS['src'] = hostS
-                self.PORTS['src_port'] = item['src']['port']
-                self.PORTS['dst'] = hostD
-                self.PORTS['dst_port'] = item['dst']['port']
-        return self.PORTS
+        links = r.json()["links"]
+        for link in links:
+            if link["src"]["device"] == deviceId:
+                if deviceId not in self.PORTS:
+                    self.PORTS[deviceId] = {}
 
-#Funkcja tworzaca flowy dla danej sciezki
-    def create_flow(self, path):
-        if (len(path) < 2):
-            AssertionError()
-        elif (len(path) == 2):
-            Manager.addFlow(self, devices[self.PORTS['src']], "1", self.PORTS['src_port'], IPs[self.PORTS['dst']])
-            Manager.addFlow(self, devices[self.PORTS['src']], self.PORTS['src_port'], "1", IPs[self.PORTS['src']])
+                # output of that device and input of second device
+                self.PORTS[deviceId][link["dst"]["device"]] = {"output": link["src"]["port"], "input": link["dst"]["port"]}
 
-            Manager.addFlow(self, devices[self.PORTS['dst']], "1", self.PORTS['dst_port'], IPs[self.PORTS['src']])
-            Manager.addFlow(self, devices[self.PORTS['dst']], self.PORTS['dst_port'], "1", IPs[self.PORTS['dst']])
+    #Funkcja tworzaca flowy dla danej sciezki
+    def create_flow(self, Path:list):
+        device1 = Path[0]
+        device2 = Path[-1]
 
-    def getTemplate(self) -> json:
+        ip1 = IPs[device1]
+        ip2 = IPs[device2]
+
+        route = Path[1:-1]
+
+        Manager.get_ports_of_device(self, device1)
+        Manager.get_ports_of_device(self, device2)
+
+        if len(route) == 0:
+            Manager.addFlow(self, device1, "1", self.PORTS[device1][device2]["output"], ip2)
+            Manager.addFlow(self, device1, self.PORTS[device1][device2]["output"], "1", ip1)
+
+            Manager.addFlow(self, device2, "1", self.PORTS[device2][device1]["output"], ip1)
+            Manager.addFlow(self, device2, self.PORTS[device2][device1]["output"], "1", ip2)
+
+        if len(route) > 0:
+            ports = self.PORTS
+            firstStop = route[0]
+            lastStop = route[len(route) - 1]
+
+            Manager.addFlow(self, device1, "1", ports[device1][firstStop]["output"], ip2)
+            Manager.addFlow(self, device1, ports[device1][firstStop]["output"], "1", ip1)
+
+            Manager.addFlow(self, device2, "1", ports[device2][lastStop]["output"], ip1)
+            Manager.addFlow(self, device2, ports[device2][lastStop]["output"], "1", ip2)
+
+            for device in route:
+                Manager.get_ports_of_device(self, device)
+
+            for i in range(len(route)):
+                device = route[i]
+                if device == firstStop and device == lastStop:
+                    Manager.addFlow(self, device, ports[device1][device]["input"], ports[device][device2]["output"], ip2)
+                    Manager.addFlow(self, device, ports[device2][device]["input"], ports[device][device1]["output"], ip1)
+                    break
+
+                if device == firstStop:
+                    nextDevice = route[i + 1]
+                    Manager.addFlow(self, device, ports[device1][device]["input"], ports[device][nextDevice]["output"], ip2)
+                    Manager.addFlow(self, device, ports[nextDevice][device]["input"], ports[device][device1]["output"], ip1)
+                if device == lastStop:
+                    lastDevice = route[i - 1]
+                    Manager.addFlow(self, device, ports[lastDevice][device]["input"], ports[device][device2]["output"], ip2)
+                    Manager.addFlow(self, device, ports[device2][device]["input"], ports[device][lastDevice]["output"], ip1)
+
+    def create_json_flow(self) -> json:
         with open("flow.json") as file:
             return json.load(file)
 
 #Funkcja dodajaca flowy do onosa
     def addFlow(self, deviceId: str, inputPort: str, outputPort: str, ipDest: str):
-        template = Manager.getTemplate(self)
+        flow_file = Manager.create_json_flow(self)
 
-        template["deviceId"] = deviceId
-        template["treatment"]["instructions"][0]["port"] = outputPort
-        template["selector"]["criteria"][0]["port"] = inputPort
-        template["selector"]["criteria"][2]["ip"] = ipDest+"/32"
+        flow_file["deviceId"] = deviceId
+        flow_file["treatment"]["instructions"][0]["port"] = outputPort
+        flow_file["selector"]["criteria"][0]["port"] = inputPort
+        flow_file["selector"]["criteria"][2]["ip"] = ipDest+"/32"
 
-        r = requests.post(onosUrl + "flows/" + deviceId, json=template, auth=HTTPBasicAuth("onos", "rocks"))
+        r = requests.post(onosUrl + "flows/" + deviceId, json=flow_file, auth=HTTPBasicAuth("onos", "rocks"))
 
 #Funkcja usuwajaca flowy z onosa
     def deleteFlows(self):
@@ -154,16 +199,16 @@ def main() -> None:
             if(start.data_input()):
                 sorted_dict = start.sort_dict(start.get_hosts(), start.get_hostD())
                 start.shortest_path(sorted_dict, start.get_hostS())
-                start.get_ports(start.get_hostS(), start.get_hostD())
+                start.convert_path()
                 start.create_flow(start.path)
     except KeyboardInterrupt:
         pass
     except AssertionError:
         print('Podales te dwa same hosty')
     except NameError:
-        print('Podales zla nazwe miasta')
-    except KeyError:
-        print('Podales zla nazwe miasta')
+        print('Podales zla nazwe miasta 1')
+    # except KeyError:
+    #     print('Podales zla nazwe miasta 2')
 
 if __name__ == '__main__':
     main()
